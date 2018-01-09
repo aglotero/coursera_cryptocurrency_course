@@ -1,6 +1,5 @@
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
+import java.security.PublicKey;
+import java.util.*;
 
 public class MaxFeeTxHandler {
 
@@ -28,77 +27,78 @@ public class MaxFeeTxHandler {
      *     values; and false otherwise.
      */
     public boolean isValidTx(Transaction tx) {
-        double inVal = 0d, outVal = 0d;
-        ArrayList<Transaction.Input> inputs=tx.getInputs();
-        ArrayList<Transaction.Output> outputs=tx.getOutputs();
+        ArrayList<Transaction.Input> inputs = tx.getInputs();
+        ArrayList<Transaction.Output> outputs = tx.getOutputs();
 
         if(inputs == null || outputs == null){
-            return true;
-        }
-
-        //all unspent transactions
-        ArrayList<UTXO> utxos=this.utxoPool.getAllUTXO();
-        for(int i = 0; i < inputs.size(); i++){
-            Transaction.Input input = inputs.get(i);
-            UTXO in = new UTXO(input.prevTxHash, input.outputIndex);
-            Transaction.Output output=null;
-            for(UTXO utxo:utxos){
-                if(utxo.equals(in)){
-                    output = this.utxoPool.getTxOutput(utxo);
-                    if(!Crypto.verifySignature(output.address, tx.getRawDataToSign(i), input.signature)){
-                        return false;
-                    }
-                    inVal+=output.value;
-                }
-            }
-            if(output == null){// input not in current UTXO pool
-                return false;
-            }
-        }
-
-
-        //no UTXO is claimed multiple times by {@code tx},
-        if(haveRepeatInput(tx)){
             return false;
         }
-        //all output'value is greater than zero
-        for(Transaction.Output out:outputs){
-            if(out.value<0){
+
+        // (1) all outputs claimed by {@code tx} are in the current UTXO pool,
+        ArrayList<UTXO> utxos = this.utxoPool.getAllUTXO();
+        Transaction.Output out = null;
+        Transaction.Input in = null;
+        UTXO utxo = null;
+
+        // (2) the signatures on each input of {@code tx} are valid,
+        Transaction.Output claimedOutput;
+        PublicKey pubKey;
+        for (int i = 0; i < tx.numInputs(); i++){
+            in = tx.getInput(i);
+            utxo = new UTXO(in.prevTxHash, in.outputIndex);
+
+            if((claimedOutput = utxoPool.getTxOutput(utxo)) == null){
                 return false;
             }
-            outVal+=out.value;
+
+            pubKey = claimedOutput.address;
+            byte [] message = tx.getRawDataToSign(i);
+            byte [] signature = in.signature;
+
+            if (!Crypto.verifySignature(pubKey, message, signature)) {
+                return false;
+            }
         }
 
-        if(inVal<outVal){//in less than out
+        // (3) no UTXO is claimed multiple times by {@code tx},
+        Set<UTXO> UTXO_set = new HashSet<>();
+        for (int i = 0; i < tx.numInputs(); i++){
+            in = tx.getInput(i);
+            utxo = new UTXO(in.prevTxHash, in.outputIndex);
+            if (UTXO_set.contains(utxo)) {
+                return false;
+            }
+            UTXO_set.add(utxo);
+        }
+
+        // (4) all of {@code tx}s output values are non-negative, and
+        double output_value = 0.0;
+        for(int i = 0; i < tx.numOutputs(); i ++){
+            out = tx.getOutput(i);
+
+            if(out.value < 0){
+                return false;
+            }
+            output_value += out.value;
+        }
+
+        // (5) the sum of {@code tx}s input values is greater than or equal to the sum of its output values;
+        // and false otherwise.
+        double input_value = 0.0;
+        for(int i = 0; i < tx.numInputs(); i ++){
+            utxo = new UTXO(tx.getInput(i).prevTxHash, tx.getInput(i).outputIndex);
+            out = utxoPool.getTxOutput(utxo);
+            if (out== null){
+                continue;
+            }
+            input_value += out.value;
+        }
+        if(input_value < output_value){
             return false;
         }
 
         return true;
     }
-
-    /**
-     * get Transaction of input's prevTxHash
-     */
-
-    private boolean haveRepeatInput(Transaction tx){
-        Map map=new HashMap();
-        //get all input
-        ArrayList<Transaction.Input> ins = tx.getInputs();
-
-        for(int i = 0, len = ins.size(); i < len; i++){
-            Transaction.Input in1=ins.get(i);
-            UTXO u1=new UTXO(in1.prevTxHash	, in1.outputIndex);
-            int code = u1.hashCode();
-            if(map.get(code) == null){
-                map.put(code, code);
-            }else{
-                return true;
-            }
-
-        }
-        return false;
-    }
-
 
 
     /**

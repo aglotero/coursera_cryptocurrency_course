@@ -62,6 +62,26 @@ public class handleTxsTest {
         assertTestSetIsValid(utxoTestSet);
     }
 
+    @Test
+    public void handleTxsWithInvalidTransactionsDoubleSpending()
+            throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+        final UtxoTestSet utxoTestSet = UtxoTestSet.builder()
+                .setPeopleSize(5)
+                .setUtxoTxNumber(100)
+                .setMaxUtxoTxOutput(10)
+                .setMaxValue(200)
+                .setTxPerTest(10)
+                .setMaxInput(10)
+                .setMaxOutput(10)
+                .setClaimingUtxoSeveralTimes(true)
+                .setClaimingOutputsNotInPool(true)
+                .setForceCorruptedSignature(true)
+                .setCorruptedPercentage(0.50) // Half invalid
+                .build();
+
+        assertTestSetIsValid(utxoTestSet);
+    }
+
     private static void assertTestSetIsValid(final UtxoTestSet utxoTestSet) {
         final ValidationLists<Transaction> trxsValidation = utxoTestSet.getValidationLists();
 
